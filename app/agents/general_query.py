@@ -1,7 +1,7 @@
 from state import State
 
 
-class Executor:
+class GeneralQuery:
     def run(state : State):
-        print("this is executor")
+        print("this is general query")
         return state
