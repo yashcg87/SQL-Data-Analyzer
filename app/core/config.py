@@ -11,3 +11,9 @@ class Settings:
     AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION')
     AZURE_OPENAI_EMB_DEPLOYMENT = os.getenv('AZURE_OPENAI_EMB_DEPLOYMENT')
     MONGO_URI = os.getenv("MONGO_URI")
+    
+    
+    DB_NAME = "My_DB"
+    COLLECTION_NAME = "metadata_embeddings"
+    INDEX = "my_semantic_idx"
+    

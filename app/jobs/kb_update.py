@@ -1,4 +1,3 @@
-import os
 import json
 import hashlib
 import logging
@@ -21,12 +20,12 @@ logging.basicConfig(level=logging.INFO)
 model = Model()
 
 client = MongoClient(Settings.MONGO_URI)
-db = client["My_DB"]
-collection = db["metadata_embeddings"]
+db = client[Settings.DB_NAME]
+collection = db[Settings.COLLECTION_NAME]
 
 
 async def fetch_pg_schema() -> dict:
-    PG_DATABASE_URL = os.getenv("PG_URI")
+    PG_DATABASE_URL = Settings.PG_URI
     if not PG_DATABASE_URL:
         logging.error("PG_URI environment variable is missing.")
         return {}

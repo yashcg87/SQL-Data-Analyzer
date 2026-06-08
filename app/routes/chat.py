@@ -14,17 +14,19 @@ def health_check():
     return "hello world"
 
 @router.get('/model_check')
-def model_check():
+async def model_check():
     response = model.get_model().invoke("answer in one word").content
     return response
 
 @router.post("/chat")
-def chat(query: Annotated[str, Body(embed=True)]):
+async def chat(query: Annotated[str, Body(embed=True)]):
     graph_input = {
-        "messages": [HumanMessage(content = query)]
+        "messages": query
     }
-    graph.invoke(graph_input)
-    return query
+    result = await graph.ainvoke(graph_input)
+    response = result["messages"][-1].content
+    print("graph result is ", result)
+    return response
 
 @router.get("/sync-now")
 def force_sync():

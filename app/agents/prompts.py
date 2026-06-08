@@ -1,50 +1,76 @@
-QUERY_ANALYZER_PROMPT = """
-        You are a query classifier.
+def query_analyzer_prompt(table_names: list):
+    # Convert list of tables into a readable string for the LLM
+    available_tables = ", ".join([f'"{t}"' for t in table_names])
+    
+    QUERY_ANALYZER_PROMPT = f"""
+    You are a query classifier and routing assistant.
 
-        Your task:
-        Classify the user query into exactly ONE of the following:
-        - general_query → if it's conversational, generic, or not asking for database data
-        - schema_retriever → if it requires fetching data from the employee table
+    Your task is to analyze the user query and identify the routing path along with the target database table.
 
-        Rules:
-        1. If the query asks for employee details, salary, department, performance, counts, comparisons, or any database information → schema_retriever
-        2. If the query is general knowledge, greetings, or unrelated to database → general_query
-        3. Do NOT explain anything
+    Classification Options for "next_node":
+    - "schema_retriever": if the query requires fetching data, metrics, attributes, or calculations from a database table.
+    - "general_query": if the query is conversational, greetings, general knowledge, or completely unrelated to the database.
 
-        Output format (STRICT):
-        Return ONLY one of:
-        general_query
-        schema_retriever
-        """
+    Available Database Tables for "table_name":
+    [{available_tables}]
+
+    Rules:
+    1. If "next_node" is "schema_retriever", match the intent of the query to the most logical table from the available tables list above.
+    2. If "next_node" is "general_query", set the value of "table_name" to null.
+    3. Do NOT include any markdown formatting, backticks (e.g., ```json), explanations, or whitespace outside the raw JSON object string.
+
+    Output Format (STRICT JSON):
+    {{"next_node": "schema_retriever" or "general_query", "table_name": "exact_table_name_from_list" or null}}
+    """
+    return QUERY_ANALYZER_PROMPT
 
 
-SQL_GENERATOR = """
-        You are an expert PostgreSQL query generator.
 
-        Your task:
-        Generate an optimal and correct SQL query for the given question.
+def sql_generator(query: str, table_data: dict) -> str:
+    """
+    Generates a dynamic PostgreSQL prompt injecting current table data context.
+    
+    Args:
+        query (str): The natural language question (e.g., "what is the highest salary...")
+        table_data (dict): Dictionary containing the schema metadata.
+                           Example: {"table_name": "employee", "columns": ["emp_id", "salary"]}
+    """
+    table_name = table_data.page_content
+    columns_list = table_data.metadata.get("column_names")
+    
+    # Format the columns list cleanly as a comma-separated string inside parentheses
+    formatted_columns = f"({', '.join(columns_list)})" if columns_list else "Not provided"
 
-        Context:
-        - Database: PostgreSQL
-        - Schema: SQL_ANALYZER
-        - Table: employee
+    SQL_GENERATOR_PROMPT = f"""
+    You are an expert PostgreSQL query generator.
 
-        Columns:{
-        (emp_id, first_name, last_name, gender, department, job_title, salary, hire_date, manager_id, city, performance_rating)}
+    Your task:
+    Generate an optimal and correct SQL query for the given question.
 
-        Rules:
-        1. Generate ONLY SQL query (no explanation)
-        2. Use correct PostgreSQL syntax
-        3. Use efficient queries (avoid unnecessary subqueries)
-        4. Use JOIN only if required (self-join for manager)
-        5. Use proper filtering, aggregation, or window functions where needed
-        6. Always SELECT only required columns (avoid SELECT *)
-        7. Handle NULL carefully (e.g., manager_id)
-        8. If aggregation is involved, use GROUP BY properly
+    Question: 
+    "{query}"
 
-        Output format:
-        Return ONLY the SQL query
-"""
+    Context:
+    - Database: PostgreSQL
+    - Schema: SQL_ANALYZER
+    - Table: {table_name}
+    - Columns: {formatted_columns}
+
+    Rules:
+    1. Generate ONLY the executable SQL query string.
+    2. Do NOT explain your logic and do NOT wrap the output in markdown code blocks like ```sql or ```.
+    3. Use correct PostgreSQL syntax (e.g., table must be referenced as "SQL_ANALYZER".{table_name} or specify schema rules).
+    4. Use efficient queries (avoid unnecessary subqueries).
+    5. Use JOIN only if required (such as self-join for manager references).
+    6. Always SELECT only the required columns to answer the question (avoid SELECT *).
+    7. Handle NULL values carefully (e.g., manager_id properties).
+    8. If aggregation is involved, use GROUP BY properties properly.
+
+    Output format:
+    Return ONLY the raw SQL query text.
+    """
+    return SQL_GENERATOR_PROMPT
+
 
 
 GENERAL_QUERY = """
@@ -63,24 +89,37 @@ GENERAL_QUERY = """
         """
 
 
-VALIDATOR = """
-        You are a SQL validation expert.
+def validator(query: str, sql_query: str) -> str:
+    """
+    Generates a strict validation prompt to analyze the safety and accuracy of the generated SQL.
+    
+    Args:
+        query (str): The user's original question (e.g., "what is the highest salary...")
+        sql_query (str): The executable SQL string produced by the generator node.
+    """
+    VALIDATOR_PROMPT = f"""
+    You are a SQL validation expert.
 
-        Your task:
-        Check if the generated SQL query is valid, safe, and executable.
+    Your task:
+    Analyze the generated SQL query against the user's original question to ensure it is valid, safe, and logically correct.
 
-        Rules:
-        1. Query must be syntactically correct (PostgreSQL)
-        2. Query must NOT modify data (no INSERT, UPDATE, DELETE, DROP)
-        3. Query must only read from employee table
-        4. Query must not contain dangerous operations
-        5. Query should not have obvious logical errors
+    Inputs to Validate:
+    - User Question: "{query}"
+    - Generated SQL Query: {sql_query}
 
-        Output format:
-        - Return YES if valid
-        - Return NO if invalid
-        Do NOT explain
-        """
+    Rules:
+    1. The query must be syntactically correct for PostgreSQL.
+    2. The query must strictly be read-only. It must NOT modify data (Forbidden: INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE).
+    3. The query must only target the allowed schema tables and columns required to answer the question.
+    4. The query must not contain dangerous operations or infinite loops.
+    5. The query must be logically aligned with the user question (e.g., if asking for "highest salary", it should use MAX() or ORDER BY with LIMIT).
+
+    Output format (STRICT):
+    Return ONLY "YES" if the query passes all rules.
+    Return ONLY "NO" if the query fails any rule.
+    Do NOT include code blocks, markdown text, backticks, or any explanation.
+    """
+    return VALIDATOR_PROMPT
 
 
 
@@ -102,19 +141,36 @@ EXECUTOR = """
         """
 
 
-EXPLAINER = """
-        You are a response formatter.
 
-        Your task:
-        Convert database output into a user-friendly answer.
+def explainer(query: str, query_results: list) -> str:
+    """
+    Generates a response formatting prompt to turn raw SQL database rows 
+    into a human-readable summary.
+    
+    Args:
+        query (str): The user's original question (e.g., "what is the highest salary...")
+        query_results (list): List of dictionaries returned by the executor node.
+                              Example: [{"max_salary": 150000}]
+    """
+    EXPLAINER_PROMPT = f"""
+    You are a response formatter.
 
-        Rules:
-        1. Answer must directly address the user question
-        2. Use simple natural language
-        3. Keep it concise (2–3 sentences max)
-        4. Highlight key values (names, salary, etc.)
+    Your task:
+    Convert the raw database output into a friendly, clear, and user-facing response.
 
-        Output:
-        Clear and meaningful final answer
-        """
+    Inputs to Summarize:
+    - User Question: "{query}"
+    - Raw Database Output: {query_results}
+
+    Rules:
+    1. Your answer must directly and accurately address the user's question.
+    2. Use simple, plain, and natural language.
+    3. Keep it highly concise (2–3 sentences maximum).
+    4. Highlight key technical metrics or values clearly (such as names, salary figures, positions, or counts).
+    5. If the raw database output is an empty list [] or contains an error, politely inform the user that no records were found matching their request.
+
+    Output format:
+    Return ONLY the clean, final answer text. Do NOT include markdown styling or background information.
+    """
+    return EXPLAINER_PROMPT
 
