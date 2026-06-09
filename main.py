@@ -3,6 +3,6 @@ from app.jobs.kb_update import lifespan
 from app.routes.chat import router
 
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 app.include_router(router)
