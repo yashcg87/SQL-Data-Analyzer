@@ -8,7 +8,7 @@ class State(TypedDict):
     route_data: str
     table_data : dict
     sql_query : str
-    validation : str
+    validation : dict = None
     query_result : list
     
     

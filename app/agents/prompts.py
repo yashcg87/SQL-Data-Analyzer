@@ -26,27 +26,38 @@ def query_analyzer_prompt(table_names: list):
 
 
 
-def sql_generator(query: str, table_data: dict) -> str:
+def sql_generator(query: str, table_data: dict, feedback: str = "") -> str:
     """
-    Generates a dynamic PostgreSQL prompt injecting current table data context.
+    Generates a dynamic PostgreSQL prompt injecting current table data context 
+    and validator feedback for self-correction loops.
     
     Args:
-        query (str): The natural language question (e.g., "what is the highest salary...")
-        table_data (dict): Dictionary containing the schema metadata.
-                           Example: {"table_name": "employee", "columns": ["emp_id", "salary"]}
+        query (str): The natural language question.
+        table_data (Document): LangChain Document containing table schema metadata.
+        feedback (str): Validation feedback explaining why the previous query failed (if any).
     """
     table_name = table_data.page_content
-    columns_list = table_data.metadata.get("column_names")
+    columns_list = table_data.metadata.get("column_names", [])
     
-    # Format the columns list cleanly as a comma-separated string inside parentheses
     formatted_columns = f"({', '.join(columns_list)})" if columns_list else "Not provided"
+
+    feedback_section = ""
+    if feedback and feedback.strip():
+        feedback_section = f"""
+    ⚠️ PREVIOUS ATTEMPT FAILED VALIDATION:
+    Your previous SQL query was rejected by the validator for the following reason:
+    "{feedback.strip()}"
+    
+    CRITICAL CRITERIA FOR THIS ATTEMPT:
+    You MUST modify your query structure to fully resolve the feedback issue stated above while still answering the user's original question.
+        """
 
     SQL_GENERATOR_PROMPT = f"""
     You are an expert PostgreSQL query generator.
 
     Your task:
     Generate an optimal and correct SQL query for the given question.
-
+    {feedback_section}
     Question: 
     "{query}"
 
@@ -59,7 +70,7 @@ def sql_generator(query: str, table_data: dict) -> str:
     Rules:
     1. Generate ONLY the executable SQL query string.
     2. Do NOT explain your logic and do NOT wrap the output in markdown code blocks like ```sql or ```.
-    3. Use correct PostgreSQL syntax (e.g., table must be referenced as "SQL_ANALYZER".{table_name} or specify schema rules).
+    3. Use correct PostgreSQL syntax (e.g., table must be referenced as "SQL_ANALYZER".{table_name}).
     4. Use efficient queries (avoid unnecessary subqueries).
     5. Use JOIN only if required (such as self-join for manager references).
     6. Always SELECT only the required columns to answer the question (avoid SELECT *).
@@ -70,6 +81,7 @@ def sql_generator(query: str, table_data: dict) -> str:
     Return ONLY the raw SQL query text.
     """
     return SQL_GENERATOR_PROMPT
+
 
 
 
@@ -114,12 +126,16 @@ def validator(query: str, sql_query: str) -> str:
     4. The query must not contain dangerous operations or infinite loops.
     5. The query must be logically aligned with the user question (e.g., if asking for "highest salary", it should use MAX() or ORDER BY with LIMIT).
 
-    Output format (STRICT):
-    Return ONLY "YES" if the query passes all rules.
-    Return ONLY "NO" if the query fails any rule.
-    Do NOT include code blocks, markdown text, backticks, or any explanation.
+    Output format (STRICT JSON):
+    Return ONLY a raw JSON object string with the following keys. Do NOT include markdown code blocks, backticks (e.g., ```json), or any conversational text.
+
+    {{
+        "pass": "YES" or "NO",
+        "feedback": "Detailed reason why the validation failed, pointing out syntax errors, forbidden keywords, or logical mismatches. MUST be an empty string if pass is YES."
+    }}
     """
     return VALIDATOR_PROMPT
+
 
 
 

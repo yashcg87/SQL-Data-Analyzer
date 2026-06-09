@@ -15,6 +15,9 @@ graph.add_node("validator", Validator.run)
 graph.add_node("general_query", GeneralQuery.run)
     
 #conditional functions    
+def route_validator(state: State):
+    return state["validation"].get("pass")
+
 
 
 #edges
@@ -22,10 +25,10 @@ graph.add_edge(START, "query_analyzer")
 graph.add_conditional_edges("query_analyzer", lambda state : state["route_data"].get("next_node"))
 graph.add_edge("schema_retriever", "sql_generator")
 graph.add_edge("sql_generator", "validator")
-graph.add_conditional_edges("validator", lambda state : state["validation"], {
-    "YES":"executor",
-    "NO": "sql_generator"
-})
+graph.add_conditional_edges("validator",route_validator, {
+    "YES": "executor",
+    "NO":"sql_generator"
+} )
 graph.add_edge("executor", "explainer")
 graph.add_edge("explainer", END)
 graph.add_edge("general_query", END)
