@@ -1,14 +1,28 @@
+import json
 from state import State
 from app.agents.prompts import query_analyzer_prompt
 from app.core.llm_config import Model
-from langchain.messages import SystemMessage, HumanMessage
-import json
+# Fixed: LangChain messages reside under langchain_core
+from langchain_core.messages import SystemMessage, HumanMessage 
+from app.core.db_config import DB
+
 llm = Model().get_model()
+db = DB()
 
 class QueryAnalyzer:
-    def run(state : State):
-        messages = [SystemMessage(query_analyzer_prompt(["employee", "users", "organizations"])), HumanMessage(state["messages"][-1].content)]
-        result = llm.invoke(messages).content
+    @staticmethod
+    async def run(state: State):
+        tables = await db.get_tables()
+        
+        messages = [
+            SystemMessage(content=query_analyzer_prompt(tables)), 
+            HumanMessage(content=state["messages"][-1].content)
+        ]
+        
+        response = await llm.ainvoke(messages)
+        result = response.content
+        
         route_data = json.loads(result)
-        print("this is json data", route_data)
-        return {'route_data' : route_data, 'curr_node': 'query_analyzer'}
+        print("final state is ", state)
+        
+        return {'route_data': route_data, 'curr_node': 'query_analyzer'}

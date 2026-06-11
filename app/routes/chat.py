@@ -1,12 +1,18 @@
 from fastapi import APIRouter, Body
+from pydantic import BaseModel
 from app.core.llm_config import Model
 from typing import Annotated
-from langchain.messages import HumanMessage
+from langchain_core.messages import HumanMessage
 from app.agents.workflow import graph
 from app.jobs.kb_update import sync_postgres_to_mongo_job
 
 router = APIRouter()
 model = Model()
+
+
+class ChatRequest(BaseModel):
+    query: str
+    thread_id: str  
 
 #routes
 @router.get('/health_check')
@@ -19,13 +25,18 @@ async def model_check():
     return response
 
 @router.post("/chat")
-async def chat(query: Annotated[str, Body(embed=True)]):
+async def chat(request: ChatRequest):
     graph_input = {
-        "messages": query
+        "messages": [HumanMessage(content=request.query)], "loop_count" : 0
     }
-    result = await graph.ainvoke(graph_input)
+    config = {
+        "configurable": {
+            "thread_id": request.thread_id
+        }
+    }
+    
+    result = await graph.ainvoke(graph_input, config=config)
     response = result["messages"][-1].content
-    print("graph result is ", result)
     return response
 
 @router.get("/sync-now")

@@ -1,3 +1,4 @@
+import operator
 from typing import Annotated, TypedDict
 from langgraph.graph import add_messages
 
@@ -10,5 +11,7 @@ class State(TypedDict):
     sql_query : str
     validation : dict = None
     query_result : list
+    error_feedback : str
+    loop_count : Annotated[int, operator.add] = 0
     
     

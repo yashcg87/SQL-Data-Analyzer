@@ -190,3 +190,17 @@ def explainer(query: str, query_results: list) -> str:
     """
     return EXPLAINER_PROMPT
 
+
+def executor_analysis(raw_error_trace : str) -> str:
+    
+    ANALYSIS_PROMPT = f"""
+    The application crashed while processing the data. 
+            
+    Review this Python stack trace/error:
+    {raw_error_trace}
+            
+    Identify what caused the crash (e.g., bad inputs, syntax errors, schema issues).
+    Provide explicit, clear feedback on how to fix it in the next attempt.
+    """
+        
+    return ANALYSIS_PROMPT
